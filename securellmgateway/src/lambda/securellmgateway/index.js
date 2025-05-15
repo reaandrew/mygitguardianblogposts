@@ -1,10 +1,12 @@
 const { BedrockRuntimeClient, InvokeModelCommand } = require('@aws-sdk/client-bedrock-runtime');
 const { SSMClient, GetParameterCommand } = require('@aws-sdk/client-ssm');
+const { CloudWatchClient, PutMetricDataCommand } = require('@aws-sdk/client-cloudwatch');
 const https = require('https');
 
 // Initialize the clients
 const bedrockClient = new BedrockRuntimeClient();
 const ssmClient = new SSMClient();
+const cloudWatchClient = new CloudWatchClient();
 
 // Supported models configuration
 const SUPPORTED_MODELS = {
@@ -29,6 +31,41 @@ async function getGitGuardianApiKey() {
 }
 
 /**
+ * Logs a security event to CloudWatch
+ * @param {Object} event - The security event details
+ */
+async function logSecurityEvent(event) {
+    console.log(JSON.stringify({
+        security_event: true,
+        ...event
+    }));
+
+    try {
+        const command = new PutMetricDataCommand({
+            Namespace: 'SecureLLMGateway',
+            MetricData: [{
+                MetricName: 'SecurityEvents',
+                Value: 1,
+                Unit: 'Count',
+                Dimensions: [
+                    {
+                        Name: 'EventType',
+                        Value: event.type
+                    },
+                    {
+                        Name: 'Policy',
+                        Value: event.policy || 'unknown'
+                    }
+                ]
+            }]
+        });
+        await cloudWatchClient.send(command);
+    } catch (error) {
+        console.error('Failed to send metric data:', error);
+    }
+}
+
+/**
  * Redacts sensitive content based on GitGuardian scan results
  * @param {string} content - The content to redact
  * @param {Object} scanResult - The GitGuardian scan result
@@ -44,7 +81,17 @@ function redactSensitiveContent(content, scanResult) {
 
     let redactedContent = content;
     const redactions = [];
-    const processedRanges = new Set(); // Track processed ranges to avoid duplicates
+    const processedRanges = new Set();
+
+    // Log security event for each policy break
+    scanResult.policy_breaks.forEach(policyBreak => {
+        logSecurityEvent({
+            type: 'sensitive_data_detected',
+            policy: policyBreak.policy,
+            matches: policyBreak.matches?.length || 0,
+            severity: policyBreak.severity || 'medium'
+        });
+    });
 
     // Sort matches by start position in reverse order to avoid position shifts
     const allMatches = scanResult.policy_breaks.flatMap(policyBreak => {
@@ -54,7 +101,7 @@ function redactSensitiveContent(content, scanResult) {
                 ...match,
                 type: policyBreak.type,
                 start: match.index_start || match.start,
-                end: match.index_end || match.end,
+                end: (match.index_end || match.end) + 1, // Add 1 to include the last character
                 policy: policyBreak.policy
             }));
         }
@@ -212,57 +259,69 @@ function extractContentForScanning(messages) {
  * @returns {Object} Response object with status code and body
  */
 async function processChatCompletion(requestBody) {
-    // Validate required fields
-    if (!requestBody.model || !Array.isArray(requestBody.messages) || requestBody.messages.length === 0) {
-        return {
-            statusCode: 400,
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-                error: {
-                    message: "Missing required fields: model and messages array",
-                    type: "invalid_request_error",
-                    param: null,
-                    code: null
-                }
-            })
-        };
-    }
-
-    // Validate model
-    if (!SUPPORTED_MODELS[requestBody.model]) {
-        return {
-            statusCode: 400,
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-                error: {
-                    message: `Model ${requestBody.model} is not supported. Currently supported models: ${Object.keys(SUPPORTED_MODELS).join(', ')}`,
-                    type: "invalid_request_error",
-                    param: "model",
-                    code: "model_not_supported"
-                }
-            })
-        };
-    }
-
-    // Validate each message in the array
-    for (const message of requestBody.messages) {
-        const messageError = validateMessage(message);
-        if (messageError) {
+    try {
+        // Validate required fields
+        if (!requestBody.model || !Array.isArray(requestBody.messages) || requestBody.messages.length === 0) {
             return {
                 statusCode: 400,
                 headers: {
                     "Content-Type": "application/json"
                 },
-                body: JSON.stringify({ error: messageError })
+                body: JSON.stringify({
+                    error: {
+                        message: "Missing required fields: model and messages array",
+                        type: "invalid_request_error",
+                        param: null,
+                        code: null
+                    }
+                })
             };
         }
-    }
 
-    try {
+        // Validate model
+        if (!SUPPORTED_MODELS[requestBody.model]) {
+            return {
+                statusCode: 400,
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    error: {
+                        message: `Model ${requestBody.model} is not supported. Currently supported models: ${Object.keys(SUPPORTED_MODELS).join(', ')}`,
+                        type: "invalid_request_error",
+                        param: "model",
+                        code: "model_not_supported"
+                    }
+                })
+            };
+        }
+
+        // Validate each message in the array
+        for (const message of requestBody.messages) {
+            const messageError = validateMessage(message);
+            if (messageError) {
+                return {
+                    statusCode: 400,
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({ error: messageError })
+                };
+            }
+        }
+
+        // Scan messages for sensitive content
+        const contentToScan = extractContentForScanning(requestBody.messages);
+        const scanResult = await scanWithGitGuardian(contentToScan);
+        
+        if (scanResult.policy_breaks && scanResult.policy_breaks.length > 0) {
+            logSecurityEvent({
+                type: 'prompt_scan_failure',
+                policy_breaks: scanResult.policy_breaks.length,
+                severity: 'high'
+            });
+        }
+
         // Scan each message's content for secrets
         for (const message of requestBody.messages) {
             try {
@@ -360,7 +419,12 @@ async function processChatCompletion(requestBody) {
             body: JSON.stringify(response)
         };
     } catch (error) {
-        console.error('Bedrock API Error:', error);
+        logSecurityEvent({
+            type: 'error',
+            error_type: error.name,
+            error_message: error.message,
+            severity: 'high'
+        });
         return {
             statusCode: 500,
             headers: {

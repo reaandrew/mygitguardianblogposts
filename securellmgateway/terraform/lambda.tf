@@ -58,6 +58,24 @@ resource "aws_iam_role_policy" "lambda_ssm" {
   })
 }
 
+resource "aws_iam_role_policy" "lambda_cloudwatch" {
+  name = "${var.project_name}-lambda-cloudwatch"
+  role = aws_iam_role.lambda_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "cloudwatch:PutMetricData"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
 data "aws_caller_identity" "current" {}
 
 data "archive_file" "lambda_zip" {
