@@ -1,6 +1,24 @@
+const { BedrockRuntimeClient, InvokeModelCommand } = require('@aws-sdk/client-bedrock-runtime');
+const { mockClient } = require('aws-sdk-client-mock');
 const { handler } = require('./index');
 
 describe('Lambda Handler', () => {
+    const bedrockMock = mockClient(BedrockRuntimeClient);
+
+    beforeEach(() => {
+        bedrockMock.reset();
+        // Setup default mock response
+        bedrockMock.on(InvokeModelCommand).resolves({
+            body: new TextEncoder().encode(JSON.stringify({
+                content: [{ text: "Hello! I'm Claude." }]
+            }))
+        });
+    });
+
+    afterEach(() => {
+        bedrockMock.restore();
+    });
+
     describe('Input Validation', () => {
         test('should return 400 when no body is provided', async () => {
             const event = {};
@@ -101,40 +119,117 @@ describe('Lambda Handler', () => {
         });
     });
 
-    describe('Successful Requests', () => {
-        test('should accept valid request with single message', async () => {
+    describe('Bedrock Integration', () => {
+        test('should correctly format request to Bedrock', async () => {
+            const event = {
+                body: JSON.stringify({
+                    model: 'anthropic.claude-3-sonnet-20240229-v1:0',
+                    messages: [
+                        { role: 'system', content: 'You are helpful.' },
+                        { role: 'user', content: 'Hello!' }
+                    ],
+                    max_tokens: 100,
+                    temperature: 0.5
+                })
+            };
+
+            await handler(event);
+
+            // Get the last call to Bedrock
+            const commandCalls = bedrockMock.commandCalls(InvokeModelCommand);
+            expect(commandCalls.length).toBe(1);
+            const lastCall = commandCalls[0];
+
+            // Verify Bedrock was called with correct parameters
+            expect(lastCall.args[0].input).toMatchObject({
+                modelId: 'anthropic.claude-3-sonnet-20240229-v1:0',
+                contentType: 'application/json',
+                accept: 'application/json'
+            });
+
+            // Verify request body format
+            const requestBody = JSON.parse(lastCall.args[0].input.body);
+            expect(requestBody).toEqual({
+                anthropic_version: "bedrock-2023-05-31",
+                max_tokens: 100,
+                temperature: 0.5,
+                messages: [
+                    {
+                        role: "user",
+                        content: expect.stringContaining("Human: You are helpful.")
+                    }
+                ]
+            });
+        });
+
+        test('should handle Bedrock API errors', async () => {
+            // Mock Bedrock error
+            bedrockMock.on(InvokeModelCommand).rejects(new Error('Bedrock API Error'));
+
             const event = {
                 body: JSON.stringify({
                     model: 'anthropic.claude-3-sonnet-20240229-v1:0',
                     messages: [{ role: 'user', content: 'Hello' }]
                 })
             };
+
             const response = await handler(event);
             
-            expect(response.statusCode).toBe(200);
-            const body = JSON.parse(response.body);
-            expect(body.model).toBe('anthropic.claude-3-sonnet-20240229-v1:0');
-            expect(body.choices).toHaveLength(1);
-            expect(body.choices[0].message.role).toBe('assistant');
-            expect(typeof body.choices[0].message.content).toBe('string');
+            expect(response.statusCode).toBe(500);
+            expect(JSON.parse(response.body).error.message).toBe('An error occurred while calling the model API');
         });
 
-        test('should accept valid request with multiple messages', async () => {
+        test('should correctly format Bedrock response to OpenAI format', async () => {
+            // Mock successful Bedrock response
+            bedrockMock.on(InvokeModelCommand).resolves({
+                body: new TextEncoder().encode(JSON.stringify({
+                    content: [{ text: "I'm Claude, here to help!" }]
+                }))
+            });
+
             const event = {
                 body: JSON.stringify({
                     model: 'anthropic.claude-3-sonnet-20240229-v1:0',
-                    messages: [
-                        { role: 'system', content: 'You are a helpful assistant.' },
-                        { role: 'user', content: 'Hello' }
-                    ]
+                    messages: [{ role: 'user', content: 'Hello' }]
                 })
             };
+
             const response = await handler(event);
             
             expect(response.statusCode).toBe(200);
             const body = JSON.parse(response.body);
-            expect(body.model).toBe('anthropic.claude-3-sonnet-20240229-v1:0');
-            expect(body.choices).toHaveLength(1);
+            expect(body).toEqual(expect.objectContaining({
+                object: "chat.completion",
+                model: 'anthropic.claude-3-sonnet-20240229-v1:0',
+                choices: [
+                    {
+                        index: 0,
+                        message: {
+                            role: "assistant",
+                            content: "I'm Claude, here to help!"
+                        },
+                        finish_reason: "stop"
+                    }
+                ],
+                usage: expect.any(Object)
+            }));
+        });
+
+        test('should use default values when max_tokens and temperature are not provided', async () => {
+            const event = {
+                body: JSON.stringify({
+                    model: 'anthropic.claude-3-sonnet-20240229-v1:0',
+                    messages: [{ role: 'user', content: 'Hello' }]
+                })
+            };
+
+            await handler(event);
+
+            const commandCalls = bedrockMock.commandCalls(InvokeModelCommand);
+            const lastCall = commandCalls[0];
+            const requestBody = JSON.parse(lastCall.args[0].input.body);
+            expect(requestBody.max_tokens).toBe(2048);
+            expect(requestBody.temperature).toBe(0.7);
         });
     });
 

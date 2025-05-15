@@ -7,7 +7,12 @@
     "test": "jest",
     "test:watch": "jest --watch"
   },
+  "dependencies": {
+    "@aws-sdk/client-bedrock-runtime": "^3.525.0",
+    "aws-sdk": "^2.1692.0"
+  },
   "devDependencies": {
+    "aws-sdk-client-mock": "^4.1.0",
     "jest": "^29.7.0"
   }
-} 
+}

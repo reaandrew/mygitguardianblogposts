@@ -1,7 +1,44 @@
+const { BedrockRuntimeClient, InvokeModelCommand } = require('@aws-sdk/client-bedrock-runtime');
+
+// Initialize the Bedrock client
+const bedrockClient = new BedrockRuntimeClient();
+
 // Supported models configuration
 const SUPPORTED_MODELS = {
-    'anthropic.claude-3-sonnet-20240229-v1:0': true
+    'anthropic.claude-3-sonnet-20240229-v1:0': {
+        provider: 'anthropic',
+        bedrockName: 'anthropic.claude-3-sonnet-20240229-v1:0'
+    }
 };
+
+/**
+ * Converts OpenAI chat format to Anthropic format
+ * @param {Array} messages - Array of message objects
+ * @returns {string} - Formatted prompt for Anthropic
+ */
+function convertToAnthropicFormat(messages) {
+    let prompt = '';
+    
+    for (const message of messages) {
+        switch (message.role) {
+            case 'system':
+                prompt += `\n\nHuman: ${message.content}\n\nAssistant: I understand. I will act according to those instructions.`;
+                break;
+            case 'user':
+                prompt += `\n\nHuman: ${message.content}`;
+                break;
+            case 'assistant':
+                prompt += `\n\nAssistant: ${message.content}`;
+                break;
+            default:
+                prompt += `\n\nHuman: ${message.content}`;
+        }
+    }
+
+    // Add final assistant prompt marker for the response
+    prompt += '\n\nAssistant: ';
+    return prompt.trim();
+}
 
 /**
  * Validates a message object
@@ -86,36 +123,82 @@ async function processChatCompletion(requestBody) {
         }
     }
 
-    // Mock response format matching OpenAI's chat completions API
-    const response = {
-        id: `chatcmpl-${Date.now()}`,
-        object: "chat.completion",
-        created: Math.floor(Date.now() / 1000),
-        model: requestBody.model,
-        choices: [
-            {
-                index: 0,
-                message: {
-                    role: "assistant",
-                    content: "This is a mock response from the Secure LLM Gateway. Your request was received successfully."
-                },
-                finish_reason: "stop"
-            }
-        ],
-        usage: {
-            prompt_tokens: 0,
-            completion_tokens: 0,
-            total_tokens: 0
-        }
-    };
+    try {
+        // Convert messages to Anthropic format
+        const prompt = convertToAnthropicFormat(requestBody.messages);
 
-    return {
-        statusCode: 200,
-        headers: {
-            "Content-Type": "application/json"
-        },
-        body: JSON.stringify(response)
-    };
+        // Prepare Bedrock request
+        const bedrockRequest = {
+            modelId: SUPPORTED_MODELS[requestBody.model].bedrockName,
+            contentType: 'application/json',
+            accept: 'application/json',
+            body: JSON.stringify({
+                anthropic_version: "bedrock-2023-05-31",
+                max_tokens: requestBody.max_tokens || 2048,
+                temperature: requestBody.temperature || 0.7,
+                messages: [
+                    {
+                        role: "user",
+                        content: prompt
+                    }
+                ]
+            })
+        };
+
+        // Call Bedrock
+        const command = new InvokeModelCommand(bedrockRequest);
+        const bedrockResponse = await bedrockClient.send(command);
+
+        // Parse Bedrock response
+        const responseBody = JSON.parse(new TextDecoder().decode(bedrockResponse.body));
+
+        // Convert to OpenAI format
+        const response = {
+            id: `chatcmpl-${Date.now()}`,
+            object: "chat.completion",
+            created: Math.floor(Date.now() / 1000),
+            model: requestBody.model,
+            choices: [
+                {
+                    index: 0,
+                    message: {
+                        role: "assistant",
+                        content: responseBody.content[0].text
+                    },
+                    finish_reason: "stop"
+                }
+            ],
+            usage: {
+                prompt_tokens: 0, // Bedrock doesn't provide token counts
+                completion_tokens: 0,
+                total_tokens: 0
+            }
+        };
+
+        return {
+            statusCode: 200,
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify(response)
+        };
+    } catch (error) {
+        console.error('Bedrock API Error:', error);
+        return {
+            statusCode: 500,
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                error: {
+                    message: "An error occurred while calling the model API",
+                    type: "internal_server_error",
+                    param: null,
+                    code: error.name || null
+                }
+            })
+        };
+    }
 }
 
 /**
