@@ -1,0 +1,13 @@
+{
+  "name": "secure-llm-gateway",
+  "version": "1.0.0",
+  "description": "A secure gateway for LLM interactions",
+  "main": "index.js",
+  "scripts": {
+    "test": "jest",
+    "test:watch": "jest --watch"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0"
+  }
+} 
