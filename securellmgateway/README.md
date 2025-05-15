@@ -38,7 +38,11 @@ As organizations adopt LLMs internally, security and control become critical req
   - Implemented proper error responses
   - Added error type categorization
   - Set up console logging for debugging
-- [ ] Create initial API documentation
+- [x] Create initial API documentation
+  - Added detailed endpoint documentation
+  - Included request/response formats
+  - Added error handling documentation
+  - Included examples and best practices
 
 ### Phase 2: GitGuardian Integration
 - [ ] Set up GitGuardian API integration
@@ -108,6 +112,151 @@ curl -X POST https://[your-api-gateway-url]/chat/completions \
     ]
   }'
 ```
+
+### API Documentation
+
+#### Chat Completions Endpoint
+
+**Endpoint:** `POST /chat/completions`
+
+**Description:**  
+Creates a model response for the given chat conversation. The endpoint is designed to be compatible with OpenAI's chat completions format while routing requests to AWS Bedrock's Claude models.
+
+**Request Headers:**
+- `Content-Type: application/json` (required)
+
+**Request Body:**
+```json
+{
+  "model": string,       // Required: The model to use
+  "messages": [          // Required: Array of messages in the conversation
+    {
+      "role": string,    // Required: "system", "user", or "assistant"
+      "content": string  // Required: The message content
+    }
+  ],
+  "max_tokens": number,  // Optional: Maximum tokens in response (default: 2048)
+  "temperature": number  // Optional: Sampling temperature (default: 0.7)
+}
+```
+
+**Supported Models:**
+- `anthropic.claude-3-sonnet-20240229-v1:0`
+
+**Response Format:**
+```json
+{
+  "id": string,         // Unique identifier for the completion
+  "object": "chat.completion",
+  "created": number,    // Unix timestamp of creation
+  "model": string,      // The model used
+  "choices": [
+    {
+      "index": number,
+      "message": {
+        "role": "assistant",
+        "content": string
+      },
+      "finish_reason": string
+    }
+  ],
+  "usage": {
+    "prompt_tokens": number,
+    "completion_tokens": number,
+    "total_tokens": number
+  }
+}
+```
+
+**Error Responses:**
+
+1. Invalid Request Format (400):
+```json
+{
+  "error": {
+    "message": string,
+    "type": "invalid_request_error",
+    "param": string,
+    "code": string
+  }
+}
+```
+
+2. Unsupported Model (400):
+```json
+{
+  "error": {
+    "message": "Model {model} is not supported",
+    "type": "invalid_request_error",
+    "param": "model",
+    "code": "model_not_supported"
+  }
+}
+```
+
+3. Server Error (500):
+```json
+{
+  "error": {
+    "message": "An error occurred while processing your request",
+    "type": "internal_server_error",
+    "param": null,
+    "code": null
+  }
+}
+```
+
+**Example Request:**
+```bash
+curl -X POST https://[your-api-gateway-url]/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "anthropic.claude-3-sonnet-20240229-v1:0",
+    "messages": [
+      {"role": "system", "content": "You are a helpful assistant."},
+      {"role": "user", "content": "What is the capital of France?"}
+    ],
+    "max_tokens": 100,
+    "temperature": 0.7
+  }'
+```
+
+**Example Response:**
+```json
+{
+  "id": "chatcmpl-1234567890",
+  "object": "chat.completion",
+  "created": 1709347200,
+  "model": "anthropic.claude-3-sonnet-20240229-v1:0",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "The capital of France is Paris."
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 0,
+    "completion_tokens": 0,
+    "total_tokens": 0
+  }
+}
+```
+
+**Rate Limits:**
+- Determined by AWS Bedrock service limits
+- Subject to Lambda concurrent execution limits
+- API Gateway throttling settings
+
+**Best Practices:**
+1. Include system messages to set context and behavior
+2. Keep messages concise and focused
+3. Handle errors gracefully in your client
+4. Implement proper retry logic for 5xx errors
+5. Monitor token usage to optimize costs
 
 ## Architecture
 
