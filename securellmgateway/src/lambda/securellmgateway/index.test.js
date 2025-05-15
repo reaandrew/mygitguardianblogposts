@@ -1,22 +1,66 @@
 const { BedrockRuntimeClient, InvokeModelCommand } = require('@aws-sdk/client-bedrock-runtime');
+const { SSMClient, GetParameterCommand } = require('@aws-sdk/client-ssm');
 const { mockClient } = require('aws-sdk-client-mock');
 const { handler } = require('./index');
+const https = require('https');
+
+// Mock https
+jest.mock('https');
 
 describe('Lambda Handler', () => {
     const bedrockMock = mockClient(BedrockRuntimeClient);
+    const ssmMock = mockClient(SSMClient);
 
     beforeEach(() => {
         bedrockMock.reset();
-        // Setup default mock response
+        ssmMock.reset();
+        jest.clearAllMocks();
+
+        // Mock SSM to return a key
+        ssmMock.on(GetParameterCommand).resolves({
+            Parameter: {
+                Value: 'mock-gitguardian-api-key'
+            }
+        });
+
+        // Mock Bedrock
         bedrockMock.on(InvokeModelCommand).resolves({
             body: new TextEncoder().encode(JSON.stringify({
                 content: [{ text: "Hello! I'm Claude." }]
             }))
         });
-    });
 
-    afterEach(() => {
-        bedrockMock.restore();
+        // Mock GitGuardian API
+        const mockResponse = {
+            on: jest.fn().mockImplementation(function(event, handler) {
+                if (event === 'data') {
+                    handler(JSON.stringify({
+                        policy_break_count: 0,
+                        policies: []
+                    }));
+                }
+                if (event === 'end') {
+                    handler();
+                }
+                return this;
+            })
+        };
+
+        const mockRequest = {
+            on: jest.fn().mockImplementation((event, handler) => mockRequest),
+            write: jest.fn().mockImplementation((data) => {
+                const requestBody = JSON.parse(data);
+                expect(requestBody).toHaveProperty('document');
+                expect(requestBody).toHaveProperty('document_type', 'text');
+                return mockRequest;
+            }),
+            end: jest.fn()
+        };
+
+        https.request.mockImplementation((options, callback) => {
+            callback(mockResponse);
+            return mockRequest;
+        });
     });
 
     describe('Input Validation', () => {
@@ -230,6 +274,177 @@ describe('Lambda Handler', () => {
             const requestBody = JSON.parse(lastCall.args[0].input.body);
             expect(requestBody.max_tokens).toBe(2048);
             expect(requestBody.temperature).toBe(0.7);
+        });
+    });
+
+    describe('GitGuardian Integration', () => {
+        test('should fetch GitGuardian API key from SSM', async () => {
+            const event = {
+                body: JSON.stringify({
+                    model: 'anthropic.claude-3-sonnet-20240229-v1:0',
+                    messages: [{ role: 'user', content: 'Hello' }]
+                })
+            };
+
+            await handler(event);
+
+            // Verify SSM was called with correct parameter
+            const ssmCalls = ssmMock.commandCalls(GetParameterCommand);
+            expect(ssmCalls.length).toBe(1);
+            expect(ssmCalls[0].args[0].input).toEqual({
+                Name: '/ara/gitguardian/apikey/scan',
+                WithDecryption: true
+            });
+        });
+
+        test('should scan each message with GitGuardian API', async () => {
+            const event = {
+                body: JSON.stringify({
+                    model: 'anthropic.claude-3-sonnet-20240229-v1:0',
+                    messages: [
+                        { role: 'system', content: 'You are helpful.' },
+                        { role: 'user', content: 'Hello!' }
+                    ]
+                })
+            };
+
+            await handler(event);
+
+            // Verify GitGuardian API was called for each message
+            expect(https.request).toHaveBeenCalledTimes(2);
+            
+            // Verify the request format for the first call
+            const firstCallOptions = https.request.mock.calls[0][0];
+            expect(firstCallOptions).toMatchObject({
+                hostname: 'api.gitguardian.com',
+                path: '/v1/scan',
+                method: 'POST',
+                headers: {
+                    'Authorization': 'Token mock-gitguardian-api-key',
+                    'Content-Type': 'application/json'
+                }
+            });
+        });
+
+        test('should continue processing even if GitGuardian scan fails', async () => {
+            // Mock GitGuardian API to fail
+            https.request.mockImplementation((options, callback) => {
+                throw new Error('GitGuardian API Error');
+            });
+
+            const event = {
+                body: JSON.stringify({
+                    model: 'anthropic.claude-3-sonnet-20240229-v1:0',
+                    messages: [{ role: 'user', content: 'Hello' }]
+                })
+            };
+
+            const response = await handler(event);
+            
+            // Should still return success response
+            expect(response.statusCode).toBe(200);
+            expect(JSON.parse(response.body).choices[0].message.content).toBe("Hello! I'm Claude.");
+        });
+
+        test('should handle GitGuardian API non-200 responses', async () => {
+            // Mock GitGuardian API to return error response
+            const mockErrorResponse = {
+                on: jest.fn().mockImplementation(function(event, handler) {
+                    if (event === 'data') {
+                        handler(JSON.stringify({
+                            detail: "API Error"
+                        }));
+                    }
+                    if (event === 'end') {
+                        handler();
+                    }
+                    return this;
+                }),
+                statusCode: 400
+            };
+
+            https.request.mockImplementation((options, callback) => {
+                callback(mockErrorResponse);
+                return {
+                    on: jest.fn(),
+                    write: jest.fn(),
+                    end: jest.fn()
+                };
+            });
+
+            const event = {
+                body: JSON.stringify({
+                    model: 'anthropic.claude-3-sonnet-20240229-v1:0',
+                    messages: [{ role: 'user', content: 'Hello' }]
+                })
+            };
+
+            const response = await handler(event);
+            
+            // Should still return success response
+            expect(response.statusCode).toBe(200);
+        });
+
+        test('should log when secrets are found', async () => {
+            // Mock console.log
+            const consoleSpy = jest.spyOn(console, 'log');
+
+            // Mock GitGuardian API to return secrets found
+            const mockSecretResponse = {
+                on: jest.fn().mockImplementation(function(event, handler) {
+                    if (event === 'data') {
+                        handler(JSON.stringify({
+                            policy_break_count: 1,
+                            policies: [
+                                {
+                                    policy: "secrets",
+                                    breaks: [
+                                        {
+                                            type: "AWS Key",
+                                            match: "AKIA..."
+                                        }
+                                    ]
+                                }
+                            ]
+                        }));
+                    }
+                    if (event === 'end') {
+                        handler();
+                    }
+                    return this;
+                })
+            };
+
+            https.request.mockImplementation((options, callback) => {
+                callback(mockSecretResponse);
+                return {
+                    on: jest.fn(),
+                    write: jest.fn(),
+                    end: jest.fn()
+                };
+            });
+
+            const event = {
+                body: JSON.stringify({
+                    model: 'anthropic.claude-3-sonnet-20240229-v1:0',
+                    messages: [{ role: 'user', content: 'My AWS key is AKIA...' }]
+                })
+            };
+
+            await handler(event);
+            
+            // Verify logging
+            expect(consoleSpy).toHaveBeenCalledWith(
+                'GitGuardian scan result for message:',
+                expect.objectContaining({
+                    role: 'user',
+                    scanResult: expect.objectContaining({
+                        policy_break_count: 1
+                    })
+                })
+            );
+
+            consoleSpy.mockRestore();
         });
     });
 

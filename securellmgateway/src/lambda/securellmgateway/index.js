@@ -1,7 +1,10 @@
 const { BedrockRuntimeClient, InvokeModelCommand } = require('@aws-sdk/client-bedrock-runtime');
+const { SSMClient, GetParameterCommand } = require('@aws-sdk/client-ssm');
+const https = require('https');
 
-// Initialize the Bedrock client
+// Initialize the clients
 const bedrockClient = new BedrockRuntimeClient();
+const ssmClient = new SSMClient();
 
 // Supported models configuration
 const SUPPORTED_MODELS = {
@@ -10,6 +13,64 @@ const SUPPORTED_MODELS = {
         bedrockName: 'anthropic.claude-3-sonnet-20240229-v1:0'
     }
 };
+
+/**
+ * Fetches the GitGuardian API key from SSM Parameter Store
+ * @returns {Promise<string>} The API key
+ */
+async function getGitGuardianApiKey() {
+    const command = new GetParameterCommand({
+        Name: '/ara/gitguardian/apikey/scan',
+        WithDecryption: true
+    });
+
+    const response = await ssmClient.send(command);
+    return response.Parameter.Value;
+}
+
+/**
+ * Scans text for secrets using GitGuardian API
+ * @param {string} content - The text to scan
+ * @returns {Promise<Object>} The scan results
+ */
+async function scanWithGitGuardian(content) {
+    const apiKey = await getGitGuardianApiKey();
+    
+    return new Promise((resolve, reject) => {
+        const requestData = JSON.stringify({
+            document: content,
+            document_type: "text"
+        });
+
+        const options = {
+            hostname: 'api.gitguardian.com',
+            path: '/v1/scan',
+            method: 'POST',
+            headers: {
+                'Authorization': `Token ${apiKey}`,
+                'Content-Type': 'application/json',
+                'Content-Length': Buffer.byteLength(requestData)
+            }
+        };
+
+        const req = https.request(options, (res) => {
+            let data = '';
+            res.on('data', (chunk) => data += chunk);
+            res.on('end', () => {
+                try {
+                    const scanResult = JSON.parse(data);
+                    resolve(scanResult);
+                } catch (error) {
+                    reject(new Error('Failed to parse GitGuardian response'));
+                }
+            });
+        });
+
+        req.on('error', (error) => reject(error));
+        req.write(requestData);
+        req.end();
+    });
+}
 
 /**
  * Converts OpenAI chat format to Anthropic format
@@ -124,6 +185,20 @@ async function processChatCompletion(requestBody) {
     }
 
     try {
+        // Scan each message for secrets
+        for (const message of requestBody.messages) {
+            try {
+                const scanResult = await scanWithGitGuardian(message.content);
+                console.log('GitGuardian scan result for message:', {
+                    role: message.role,
+                    scanResult
+                });
+            } catch (error) {
+                console.error('GitGuardian scanning error:', error);
+                // Continue processing even if scanning fails
+            }
+        }
+
         // Convert messages to Anthropic format
         const prompt = convertToAnthropicFormat(requestBody.messages);
 

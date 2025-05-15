@@ -45,8 +45,14 @@ As organizations adopt LLMs internally, security and control become critical req
   - Included examples and best practices
 
 ### Phase 2: GitGuardian Integration
-- [ ] Set up GitGuardian API integration
-- [ ] Implement prompt screening using GitGuardian Secrets Detection
+- [x] Set up GitGuardian API integration
+  - Implemented SSM Parameter Store for API key storage
+  - Added GitGuardian API client integration
+  - Set up proper error handling for API calls
+- [x] Implement prompt screening using GitGuardian Secrets Detection
+  - Added message scanning before processing
+  - Implemented proper request format for GitGuardian API
+  - Added comprehensive error handling
 - [ ] Add response screening functionality
 - [ ] Create sensitive data redaction system
 - [ ] Implement match location handling from GitGuardian API
