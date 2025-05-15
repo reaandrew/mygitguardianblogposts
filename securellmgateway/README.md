@@ -53,9 +53,17 @@ As organizations adopt LLMs internally, security and control become critical req
   - Added message scanning before processing
   - Implemented proper request format for GitGuardian API
   - Added comprehensive error handling
-- [ ] Add response screening functionality
-- [ ] Create sensitive data redaction system
-- [ ] Implement match location handling from GitGuardian API
+  - Fixed payload format to match GitGuardian API requirements
+  - Added proper AWS credential format detection
+- [x] Add response screening functionality
+  - Implemented scanning of LLM responses
+  - Added proper error handling for response scanning
+  - Maintained consistent scanning format
+- [ ] Implement sensitive data redaction system
+  - Add response scanning with GitGuardian
+  - Handle match locations from GitGuardian API
+  - Implement redaction of detected sensitive data
+  - Add logging of redacted content
 - [ ] Add logging for security events
 - [ ] Create monitoring for screening results
 
