@@ -17,9 +17,9 @@ resource "aws_apigatewayv2_integration" "lambda" {
   payload_format_version = "2.0"
 }
 
-resource "aws_apigatewayv2_route" "hello_world" {
+resource "aws_apigatewayv2_route" "chat_completions" {
   api_id    = aws_apigatewayv2_api.main.id
-  route_key = "POST /hello"
+  route_key = "POST /chat/completions"
   target    = "integrations/${aws_apigatewayv2_integration.lambda.id}"
 }
 

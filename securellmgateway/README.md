@@ -59,11 +59,13 @@ As organizations adopt LLMs internally, security and control become critical req
   - Implemented scanning of LLM responses
   - Added proper error handling for response scanning
   - Maintained consistent scanning format
-- [ ] Implement sensitive data redaction system
-  - Add response scanning with GitGuardian
-  - Handle match locations from GitGuardian API
-  - Implement redaction of detected sensitive data
-  - Add logging of redacted content
+- [x] Implement sensitive data redaction system
+  - Added response scanning with GitGuardian
+  - Implemented handling of match locations from GitGuardian API
+  - Added redaction of detected sensitive data
+  - Implemented logging of redacted content
+  - Added prevention of duplicate redactions
+  - Ensured redacted content is used in LLM requests
 - [ ] Add logging for security events
 - [ ] Create monitoring for screening results
 

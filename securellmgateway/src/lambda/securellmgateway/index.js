@@ -29,6 +29,71 @@ async function getGitGuardianApiKey() {
 }
 
 /**
+ * Redacts sensitive content based on GitGuardian scan results
+ * @param {string} content - The content to redact
+ * @param {Object} scanResult - The GitGuardian scan result
+ * @returns {Object} Object containing redacted content and redaction info
+ */
+function redactSensitiveContent(content, scanResult) {
+    if (!scanResult.policy_breaks || scanResult.policy_breaks.length === 0) {
+        return {
+            content,
+            redactions: []
+        };
+    }
+
+    let redactedContent = content;
+    const redactions = [];
+    const processedRanges = new Set(); // Track processed ranges to avoid duplicates
+
+    // Sort matches by start position in reverse order to avoid position shifts
+    const allMatches = scanResult.policy_breaks.flatMap(policyBreak => {
+        // Handle different match structures
+        if (policyBreak.matches) {
+            return policyBreak.matches.map(match => ({
+                ...match,
+                type: policyBreak.type,
+                start: match.index_start || match.start,
+                end: match.index_end || match.end,
+                policy: policyBreak.policy
+            }));
+        }
+        return [];
+    }).sort((a, b) => b.start - a.start);
+
+    // Apply redactions
+    for (const match of allMatches) {
+        if (match.start === undefined || match.end === undefined) {
+            continue; // Skip matches without position information
+        }
+
+        // Create a unique key for this range
+        const rangeKey = `${match.start}-${match.end}`;
+        if (processedRanges.has(rangeKey)) {
+            continue; // Skip if we've already processed this range
+        }
+        processedRanges.add(rangeKey);
+
+        const before = redactedContent.substring(0, match.start);
+        const after = redactedContent.substring(match.end);
+        redactedContent = before + 'REDACTED' + after;
+
+        redactions.push({
+            type: match.type,
+            start: match.start,
+            end: match.end,
+            original: content.substring(match.start, match.end),
+            policy: match.policy
+        });
+    }
+
+    return {
+        content: redactedContent,
+        redactions
+    };
+}
+
+/**
  * Scans text for secrets using GitGuardian API
  * @param {string} content - The text to scan
  * @param {string} filename - Optional filename for the scan
@@ -201,12 +266,17 @@ async function processChatCompletion(requestBody) {
         // Scan each message's content for secrets
         for (const message of requestBody.messages) {
             try {
-                // Only send the content part to GitGuardian
                 const scanResult = await scanWithGitGuardian(message.content);
-                console.log('GitGuardian scan result for message:', {
-                    role: message.role,
-                    scanResult
-                });
+                const { content: redactedContent, redactions } = redactSensitiveContent(message.content, scanResult);
+                
+                if (redactions.length > 0) {
+                    console.log('GitGuardian scan found sensitive content in message:', {
+                        role: message.role,
+                        scanResult,
+                        redactions
+                    });
+                    message.content = redactedContent;
+                }
             } catch (error) {
                 console.error('GitGuardian scanning error:', error);
                 // Continue processing even if scanning fails
@@ -240,12 +310,20 @@ async function processChatCompletion(requestBody) {
 
         // Parse Bedrock response
         const responseBody = JSON.parse(new TextDecoder().decode(bedrockResponse.body));
-        const llmResponse = responseBody.content[0].text;
+        let llmResponse = responseBody.content[0].text;
 
-        // Scan LLM response for secrets
+        // Scan and redact LLM response
         try {
             const scanResult = await scanWithGitGuardian(llmResponse);
-            console.log('GitGuardian scan result for LLM response:', scanResult);
+            const { content: redactedResponse, redactions } = redactSensitiveContent(llmResponse, scanResult);
+            
+            if (redactions.length > 0) {
+                console.log('GitGuardian scan found sensitive content in LLM response:', {
+                    scanResult,
+                    redactions
+                });
+                llmResponse = redactedResponse;
+            }
         } catch (error) {
             console.error('GitGuardian scanning error for LLM response:', error);
             // Continue processing even if scanning fails
