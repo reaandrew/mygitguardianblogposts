@@ -31,15 +31,16 @@ async function getGitGuardianApiKey() {
 /**
  * Scans text for secrets using GitGuardian API
  * @param {string} content - The text to scan
+ * @param {string} filename - Optional filename for the scan
  * @returns {Promise<Object>} The scan results
  */
-async function scanWithGitGuardian(content) {
+async function scanWithGitGuardian(content, filename = "chat.txt") {
     const apiKey = await getGitGuardianApiKey();
     
     return new Promise((resolve, reject) => {
         const requestData = JSON.stringify({
-            document: content,
-            document_type: "text"
+            filename,
+            document: content            // raw text to scan (≤ 1 MB)
         });
 
         const options = {
@@ -129,6 +130,18 @@ function validateMessage(message) {
 }
 
 /**
+ * Extracts content from messages for GitGuardian scanning
+ * @param {Array} messages - Array of message objects
+ * @returns {string} - Combined content for scanning
+ */
+function extractContentForScanning(messages) {
+    return messages.map(message => {
+        // Extract just the content part, not the role or other metadata
+        return message.content;
+    }).join('\n\n');
+}
+
+/**
  * Processes a chat completion request
  * @param {Object} requestBody - The parsed request body
  * @returns {Object} Response object with status code and body
@@ -185,9 +198,10 @@ async function processChatCompletion(requestBody) {
     }
 
     try {
-        // Scan each message for secrets
+        // Scan each message's content for secrets
         for (const message of requestBody.messages) {
             try {
+                // Only send the content part to GitGuardian
                 const scanResult = await scanWithGitGuardian(message.content);
                 console.log('GitGuardian scan result for message:', {
                     role: message.role,
@@ -226,6 +240,16 @@ async function processChatCompletion(requestBody) {
 
         // Parse Bedrock response
         const responseBody = JSON.parse(new TextDecoder().decode(bedrockResponse.body));
+        const llmResponse = responseBody.content[0].text;
+
+        // Scan LLM response for secrets
+        try {
+            const scanResult = await scanWithGitGuardian(llmResponse);
+            console.log('GitGuardian scan result for LLM response:', scanResult);
+        } catch (error) {
+            console.error('GitGuardian scanning error for LLM response:', error);
+            // Continue processing even if scanning fails
+        }
 
         // Convert to OpenAI format
         const response = {
@@ -238,7 +262,7 @@ async function processChatCompletion(requestBody) {
                     index: 0,
                     message: {
                         role: "assistant",
-                        content: responseBody.content[0].text
+                        content: llmResponse
                     },
                     finish_reason: "stop"
                 }

@@ -290,7 +290,7 @@ describe('Lambda Handler', () => {
 
             // Verify SSM was called with correct parameter
             const ssmCalls = ssmMock.commandCalls(GetParameterCommand);
-            expect(ssmCalls.length).toBe(1);
+            expect(ssmCalls.length).toBe(2); // Called once for input scan, once for response scan
             expect(ssmCalls[0].args[0].input).toEqual({
                 Name: '/ara/gitguardian/apikey/scan',
                 WithDecryption: true
@@ -310,8 +310,8 @@ describe('Lambda Handler', () => {
 
             await handler(event);
 
-            // Verify GitGuardian API was called for each message
-            expect(https.request).toHaveBeenCalledTimes(2);
+            // Verify GitGuardian API was called for each message plus response
+            expect(https.request).toHaveBeenCalledTimes(3); // 2 messages + 1 response
             
             // Verify the request format for the first call
             const firstCallOptions = https.request.mock.calls[0][0];
@@ -323,6 +323,21 @@ describe('Lambda Handler', () => {
                     'Authorization': 'Token mock-gitguardian-api-key',
                     'Content-Type': 'application/json'
                 }
+            });
+
+            // Verify that only the content is sent to GitGuardian with correct payload format
+            const mockRequest = https.request.mock.results[0].value;
+            const firstCallData = JSON.parse(mockRequest.write.mock.calls[0][0]);
+            expect(firstCallData).toEqual({
+                filename: 'chat.txt',
+                document: 'You are helpful.'
+            });
+
+            // Verify second message content
+            const secondCallData = JSON.parse(mockRequest.write.mock.calls[1][0]);
+            expect(secondCallData).toEqual({
+                filename: 'chat.txt',
+                document: 'Hello!'
             });
         });
 
@@ -445,6 +460,67 @@ describe('Lambda Handler', () => {
             );
 
             consoleSpy.mockRestore();
+        });
+
+        test('should scan LLM response with GitGuardian API', async () => {
+            // Mock GitGuardian API to return secrets found
+            const mockSecretResponse = {
+                on: jest.fn().mockImplementation(function(event, handler) {
+                    if (event === 'data') {
+                        handler(JSON.stringify({
+                            policy_break_count: 1,
+                            policies: [
+                                {
+                                    policy: "secrets",
+                                    breaks: [
+                                        {
+                                            type: "AWS Key",
+                                            match: "AKIA..."
+                                        }
+                                    ]
+                                }
+                            ]
+                        }));
+                    }
+                    if (event === 'end') {
+                        handler();
+                    }
+                    return this;
+                })
+            };
+
+            https.request.mockImplementation((options, callback) => {
+                callback(mockSecretResponse);
+                return {
+                    on: jest.fn(),
+                    write: jest.fn(),
+                    end: jest.fn()
+                };
+            });
+
+            const event = {
+                body: JSON.stringify({
+                    model: 'anthropic.claude-3-sonnet-20240229-v1:0',
+                    messages: [{ role: 'user', content: 'Hello' }]
+                })
+            };
+
+            await handler(event);
+
+            // Verify GitGuardian API was called for both input and response
+            expect(https.request).toHaveBeenCalledTimes(2);
+            
+            // Verify the request format for the response scan
+            const responseScanCall = https.request.mock.calls[1][0];
+            expect(responseScanCall).toMatchObject({
+                hostname: 'api.gitguardian.com',
+                path: '/v1/scan',
+                method: 'POST',
+                headers: {
+                    'Authorization': 'Token mock-gitguardian-api-key',
+                    'Content-Type': 'application/json'
+                }
+            });
         });
     });
 
