@@ -9,8 +9,8 @@
   },
   "dependencies": {
     "@aws-sdk/client-bedrock-runtime": "^3.525.0",
+    "@aws-sdk/client-cloudwatch": "^3.810.0",
     "@aws-sdk/client-ssm": "^3.810.0",
-    "@aws-sdk/client-cloudwatch": "^3.0.0",
     "aws-sdk": "^2.1692.0"
   },
   "devDependencies": {
