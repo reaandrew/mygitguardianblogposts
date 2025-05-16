@@ -310,35 +310,22 @@ async function processChatCompletion(requestBody) {
             }
         }
 
-        // Scan messages for sensitive content
-        const contentToScan = extractContentForScanning(requestBody.messages);
-        const scanResult = await scanWithGitGuardian(contentToScan);
-        
-        if (scanResult.policy_breaks && scanResult.policy_breaks.length > 0) {
-            logSecurityEvent({
-                type: 'prompt_scan_failure',
-                policy_breaks: scanResult.policy_breaks.length,
-                severity: 'high'
-            });
-        }
+        // Scan all messages in parallel
+        const scanPromises = requestBody.messages.map(message => scanWithGitGuardian(message.content));
+        const scanResults = await Promise.all(scanPromises);
 
-        // Scan each message's content for secrets
-        for (const message of requestBody.messages) {
-            try {
-                const scanResult = await scanWithGitGuardian(message.content);
-                const { content: redactedContent, redactions } = redactSensitiveContent(message.content, scanResult);
-                
-                if (redactions.length > 0) {
-                    console.log('GitGuardian scan found sensitive content in message:', {
-                        role: message.role,
-                        scanResult,
-                        redactions
-                    });
-                    message.content = redactedContent;
-                }
-            } catch (error) {
-                console.error('GitGuardian scanning error:', error);
-                // Continue processing even if scanning fails
+        // Process message scan results
+        for (let i = 0; i < requestBody.messages.length; i++) {
+            const scanResult = scanResults[i];
+            const { content: redactedContent, redactions } = redactSensitiveContent(requestBody.messages[i].content, scanResult);
+            
+            if (redactions.length > 0) {
+                console.log('GitGuardian scan found sensitive content in message:', {
+                    role: requestBody.messages[i].role,
+                    scanResult,
+                    redactions
+                });
+                requestBody.messages[i].content = redactedContent;
             }
         }
 
@@ -371,7 +358,7 @@ async function processChatCompletion(requestBody) {
         const responseBody = JSON.parse(new TextDecoder().decode(bedrockResponse.body));
         let llmResponse = responseBody.content[0].text;
 
-        // Scan and redact LLM response
+        // Scan LLM response
         try {
             const scanResult = await scanWithGitGuardian(llmResponse);
             const { content: redactedResponse, redactions } = redactSensitiveContent(llmResponse, scanResult);

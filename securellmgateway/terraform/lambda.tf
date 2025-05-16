@@ -95,7 +95,8 @@ resource "aws_lambda_function" "hello_world" {
   handler         = "index.handler"
   source_code_hash = data.archive_file.lambda_zip.output_base64sha256
   runtime         = "nodejs18.x"
-  timeout         = 30  # Increased timeout for API calls
+  timeout         = 900  # 15 minutes
+  memory_size     = 1024 # 1GB of memory
 
   environment {
     variables = {

@@ -301,7 +301,7 @@ describe('Lambda Handler', () => {
 
             // Verify SSM was called with correct parameter
             const ssmCalls = ssmMock.commandCalls(GetParameterCommand);
-            expect(ssmCalls.length).toBe(3); // Called for initial scan, message scan, and response scan
+            expect(ssmCalls.length).toBe(2); // Called for message scans and response scan
             expect(ssmCalls[0].args[0].input).toEqual({
                 Name: '/ara/gitguardian/apikey/scan',
                 WithDecryption: true
@@ -322,7 +322,7 @@ describe('Lambda Handler', () => {
             await handler(event);
 
             // Verify GitGuardian API was called for each message plus response
-            expect(https.request).toHaveBeenCalledTimes(4); // Initial scan + 2 messages + 1 response
+            expect(https.request).toHaveBeenCalledTimes(3); // 2 messages + 1 response
             
             // Verify the request format for the first call
             const firstCallOptions = https.request.mock.calls[0][0];
@@ -348,11 +348,7 @@ describe('Lambda Handler', () => {
 
             https.request.mockImplementation((options, callback) => {
                 callback(mockResponse);
-                return {
-                    on: jest.fn(),
-                    write: jest.fn(),
-                    end: jest.fn()
-                };
+                return mockResponse;
             });
 
             // Mock successful Bedrock response
@@ -463,10 +459,10 @@ describe('Lambda Handler', () => {
             await handler(event);
 
             // Verify GitGuardian API was called for both input and response
-            expect(https.request).toHaveBeenCalledTimes(3); // Initial scan + message scan + response scan
+            expect(https.request).toHaveBeenCalledTimes(2); // parallel message scans + response scan
             
             // Verify the request format for the response scan
-            const responseScanCall = https.request.mock.calls[2][0];
+            const responseScanCall = https.request.mock.calls[1][0];
             expect(responseScanCall.headers['Authorization']).toBe('Token test-api-key');
             expect(responseScanCall.headers['Content-Type']).toBe('application/json');
         });
@@ -490,11 +486,7 @@ describe('Lambda Handler', () => {
 
             https.request.mockImplementation((options, callback) => {
                 callback(mockErrorResponse);
-                return {
-                    on: jest.fn(),
-                    write: jest.fn(),
-                    end: jest.fn()
-                };
+                return mockErrorResponse;
             });
 
             const event = {
@@ -544,11 +536,7 @@ describe('Lambda Handler', () => {
 
             https.request.mockImplementation((options, callback) => {
                 callback(mockSecretResponse);
-                return {
-                    on: jest.fn(),
-                    write: jest.fn(),
-                    end: jest.fn()
-                };
+                return mockSecretResponse;
             });
 
             // Mock Bedrock to return the redacted content
@@ -617,11 +605,7 @@ describe('Lambda Handler', () => {
 
             https.request.mockImplementation((options, callback) => {
                 callback(mockSecretResponse);
-                return {
-                    on: jest.fn(),
-                    write: jest.fn(),
-                    end: jest.fn()
-                };
+                return mockSecretResponse;
             });
 
             // Mock Bedrock to return the redacted content
@@ -702,11 +686,7 @@ describe('Lambda Handler', () => {
 
             https.request.mockImplementation((options, callback) => {
                 callback(mockSecretResponse);
-                return {
-                    on: jest.fn(),
-                    write: jest.fn(),
-                    end: jest.fn()
-                };
+                return mockSecretResponse;
             });
 
             // Mock Bedrock to return the redacted content
@@ -767,11 +747,7 @@ describe('Lambda Handler', () => {
 
             https.request.mockImplementation((options, callback) => {
                 callback(mockSecretResponse);
-                return {
-                    on: jest.fn(),
-                    write: jest.fn(),
-                    end: jest.fn()
-                };
+                return mockSecretResponse;
             });
 
             const event = {
