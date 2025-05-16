@@ -322,12 +322,12 @@ describe('Lambda Handler', () => {
             await handler(event);
 
             // Verify GitGuardian API was called for each message plus response
-            expect(https.request).toHaveBeenCalledTimes(3); // 2 messages + 1 response
+            expect(https.request).toHaveBeenCalledTimes(3); // 2 message scans + 1 response scan
             
-            // Verify the request format for the first call
-            const firstCallOptions = https.request.mock.calls[0][0];
-            expect(firstCallOptions.headers['Authorization']).toBe('Token test-api-key');
-            expect(firstCallOptions.headers['Content-Type']).toBe('application/json');
+            // Verify the request format for the response scan
+            const responseScanCall = https.request.mock.calls[2][0];
+            expect(responseScanCall.headers['Authorization']).toBe('Token test-api-key');
+            expect(responseScanCall.headers['Content-Type']).toBe('application/json');
         });
 
         test('should continue processing even if GitGuardian scan fails', async () => {
@@ -458,8 +458,8 @@ describe('Lambda Handler', () => {
 
             await handler(event);
 
-            // Verify GitGuardian API was called for both input and response
-            expect(https.request).toHaveBeenCalledTimes(2); // parallel message scans + response scan
+            // Verify GitGuardian API was called for each message plus response
+            expect(https.request).toHaveBeenCalledTimes(2); // 1 message scan + 1 response scan
             
             // Verify the request format for the response scan
             const responseScanCall = https.request.mock.calls[1][0];

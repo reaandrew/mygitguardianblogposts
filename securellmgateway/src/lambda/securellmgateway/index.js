@@ -358,7 +358,7 @@ async function processChatCompletion(requestBody) {
         const responseBody = JSON.parse(new TextDecoder().decode(bedrockResponse.body));
         let llmResponse = responseBody.content[0].text;
 
-        // Scan LLM response
+        // Scan and redact LLM response
         try {
             const scanResult = await scanWithGitGuardian(llmResponse);
             const { content: redactedResponse, redactions } = redactSensitiveContent(llmResponse, scanResult);
