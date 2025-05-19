@@ -22,18 +22,18 @@ I began with the leanest possible Lambda function fronted by API Gateway. It exp
 
 ## Phase&nbsp;2 – Dropping GitGuardian into the Request Path
 
-
-With basic forwarding stable, I introduced GitGuardian’s Secrets Detection API. Every incoming prompt was scanned before it ever touched a model; every model response was scanned before it left the gateway. Detected secrets were replaced with the token **REDACTED** while the message structure stayed intact. API keys lived securely in SSM Parameter Store, and CloudWatch captured a detailed audit trail: who sent what, when, and which rules fired.
+With basic forwarding stable, I introduced GitGuardian’s Secrets Detection API—starting simple. At this stage, I used the `scan` endpoint to screen both incoming prompts and model responses, without any redaction logic yet. This was a light iteration on Phase 1, just enough to validate integration and confirm that secret detection could run inline without disrupting the flow. API keys were retrieved securely from SSM Parameter Store, and all logs were captured in CloudWatch for observability.
 
 ![secure-llm-gateway-Phase-2-flow.drawio.png](images/secure-llm-gateway-Phase-2-flow.drawio.png)
 
-[https://github.com/secronyx/secure-llm-gateway/tree/phase-2](https://github.com/secronyx/secure-llm-gateway/tree/phase-2
+[View this phase on GitHub](https://github.com/secronyx/secure-llm-gateway/tree/phase-2)
+
 
 ---
 
 ## Phase&nbsp;3 – Beating the 1 MB Limit with Smart Chunking
 
-Real-world prompts—and especially model outputs—quickly exceeded GitGuardian’s 1 MB payload cap. Rather than truncate, I wrote a JSON-aware chunker that walks the incoming tree, slices arrays element-by-element or objects property-by-property, and labels each piece so it can be reassembled after scanning. The gateway swapped to GitGuardian’s *multiscan* endpoint, batching dozens of chunks in a single call and keeping latency low. A small CLI rounds out the tooling so I can test chunking locally on any JSON file.
+Real-world prompts—and especially model outputs—could exceed GitGuardian’s 1 MB payload cap. Rather than truncate, I wrote a JSON-aware chunker that walks the incoming tree, slices arrays element-by-element or objects property-by-property, and labels each piece so it can be reassembled after scanning. At this stage, I also introduced redaction: any secrets detected by GitGuardian were replaced with the token **REDACTED** before being passed along. The gateway switched to using GitGuardian’s *multiscan* endpoint, batching dozens of chunks in a single call while keeping latency low.
 
 ![secure-llm-gateway-Phase-3-flow.drawio.png](images/secure-llm-gateway-Phase-3-flow.drawio.png)
 
