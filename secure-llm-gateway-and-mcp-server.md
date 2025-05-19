@@ -47,7 +47,9 @@ To complete the architecture and prepare for future access controls, I added a s
 
 ![secure-llm-gateway-Phase-4.drawio.png](images/secure-llm-gateway-Phase-4.drawio.png)
 
-The final phase stretched beyond chat completions. Many advanced agent patterns need the model to “pull” external documents. I built a sister Lambda that implements the **Model Context Protocol (MCP)**: given a `file_key`, it fetches the corresponding object, screens it with the same GitGuardian pipeline (chunking included), and streams a redacted version back. A synthetic data generator sprinkles every secret type GitGuardian supports into sample files, so regression tests prove nothing leaks.
+The final phase stretched beyond chat completions. Many advanced agent patterns need the model to “pull” external documents. To support that, I built a sister Lambda that implements the **Model Context Protocol (MCP)** using [this AWS sample serverless MCP project](https://github.com/aws-samples/sample-serverless-mcp-servers) as the base. I added an additional tool definition to the project—wired in via an argument—so the server and MCP clients stay in sync with the shared schema. This is an important detail since extending the MCP interface requires awareness of both sides of the contract.
+
+The Lambda fetches a file using a `file_key`, screens the content using the same GitGuardian scanning pipeline (including chunking), and streams a redacted version back. I reused the GitGuardian wrapper built earlier for the Secure LLM Gateway, fetching the API key securely from AWS Parameter Store. The whole setup now runs behind an upgraded **API Gateway V2**, managed through Terraform for consistency with the rest of the stack. A synthetic data generator also tests all supported secret types, making sure redaction holds up under regression testing.
 
 ---
 
