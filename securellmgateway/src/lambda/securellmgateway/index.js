@@ -1,7 +1,8 @@
 const { BedrockRuntimeClient, InvokeModelCommand } = require('@aws-sdk/client-bedrock-runtime');
 const { SSMClient, GetParameterCommand } = require('@aws-sdk/client-ssm');
 const { CloudWatchClient, PutMetricDataCommand } = require('@aws-sdk/client-cloudwatch');
-const { scan } = require('./gitguardian/gitguardian-wrapper');
+const { gitguardian, chunker } = require('secure-llm-utils');
+const { scan } = gitguardian;
 
 // Error response helpers
 const errorHeaders = { "Content-Type": "application/json" };

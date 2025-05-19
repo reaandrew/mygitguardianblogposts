@@ -12,7 +12,8 @@
     "@aws-sdk/client-cloudwatch": "^3.810.0",
     "@aws-sdk/client-ssm": "^3.810.0",
     "aws-sdk": "^2.1692.0",
-    "node-fetch": "^3.3.2"
+    "node-fetch": "^3.3.2",
+    "secure-llm-libs": "file:../secure-llm-libs"
   },
   "devDependencies": {
     "aws-sdk-client-mock": "^4.1.0",
