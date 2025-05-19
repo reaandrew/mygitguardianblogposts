@@ -66,8 +66,6 @@ As organizations adopt LLMs internally, security and control become critical req
   - Implemented logging of redacted content
   - Added prevention of duplicate redactions
   - Ensured redacted content is used in LLM requests
-- [ ] Add logging for security events
-- [ ] Create monitoring for screening results
 
 ### Phase 3: Chunking & Truncation System
 - [ ] Implement input chunking logic

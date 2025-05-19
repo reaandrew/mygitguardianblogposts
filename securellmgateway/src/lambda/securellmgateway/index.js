@@ -1,7 +1,75 @@
 const { BedrockRuntimeClient, InvokeModelCommand } = require('@aws-sdk/client-bedrock-runtime');
 const { SSMClient, GetParameterCommand } = require('@aws-sdk/client-ssm');
 const { CloudWatchClient, PutMetricDataCommand } = require('@aws-sdk/client-cloudwatch');
-const https = require('https');
+const { scan } = require('./gitguardian/gitguardian-wrapper');
+
+// Error response helpers
+const errorHeaders = { "Content-Type": "application/json" };
+
+// Missing required fields error (400)
+const createMissingFieldsErrorResponse = () => ({
+    statusCode: 400,
+    headers: errorHeaders,
+    body: JSON.stringify({
+        error: {
+            message: "Missing required fields: model and messages array",
+            type: "invalid_request_error",
+            param: null,
+            code: null
+        }
+    })
+});
+
+// Model not supported error (400)
+const createUnsupportedModelErrorResponse = (model, supportedModels) => ({
+    statusCode: 400,
+    headers: errorHeaders,
+    body: JSON.stringify({
+        error: {
+            message: `Model ${model} is not supported. Currently supported models: ${supportedModels.join(', ')}`,
+            type: "invalid_request_error",
+            param: "model",
+            code: "model_not_supported"
+        }
+    })
+});
+
+// Message validation error (400)
+const createMessageValidationErrorResponse = (messageError) => ({
+    statusCode: 400,
+    headers: errorHeaders,
+    body: JSON.stringify({
+        error: messageError
+    })
+});
+
+// Server error (500)
+const createServerErrorResponse = (errorName) => ({
+    statusCode: 500,
+    headers: errorHeaders,
+    body: JSON.stringify({
+        error: {
+            message: "An error occurred while calling the model API",
+            type: "internal_server_error",
+            param: null,
+            code: errorName || null
+        }
+    })
+});
+
+// Request parsing error (500)
+const createParsingErrorResponse = () => ({
+    statusCode: 500,
+    headers: errorHeaders,
+    body: JSON.stringify({
+        error: {
+            message: "An error occurred while processing your request",
+            type: "internal_server_error",
+            param: null,
+            code: null
+        }
+    })
+});
 
 // Initialize the clients
 const bedrockClient = new BedrockRuntimeClient();
@@ -66,153 +134,41 @@ async function logSecurityEvent(event) {
 }
 
 /**
- * Redacts sensitive content based on GitGuardian scan results
- * @param {string} content - The content to redact
- * @param {Object} scanResult - The GitGuardian scan result
- * @returns {Object} Object containing redacted content and redaction info
- */
-function redactSensitiveContent(content, scanResult) {
-    if (!scanResult.policy_breaks || scanResult.policy_breaks.length === 0) {
-        return {
-            content,
-            redactions: []
-        };
-    }
-
-    let redactedContent = content;
-    const redactions = [];
-    const processedRanges = new Set();
-
-    // Log security event for each policy break
-    scanResult.policy_breaks.forEach(policyBreak => {
-        logSecurityEvent({
-            type: 'sensitive_data_detected',
-            policy: policyBreak.policy,
-            matches: policyBreak.matches?.length || 0,
-            severity: policyBreak.severity || 'medium'
-        });
-    });
-
-    // Sort matches by start position in reverse order to avoid position shifts
-    const allMatches = scanResult.policy_breaks.flatMap(policyBreak => {
-        // Handle different match structures
-        if (policyBreak.matches) {
-            return policyBreak.matches.map(match => ({
-                ...match,
-                type: policyBreak.type,
-                start: match.index_start || match.start,
-                end: (match.index_end || match.end) + 1, // Add 1 to include the last character
-                policy: policyBreak.policy
-            }));
-        }
-        return [];
-    }).sort((a, b) => b.start - a.start);
-
-    // Apply redactions
-    for (const match of allMatches) {
-        if (match.start === undefined || match.end === undefined) {
-            continue; // Skip matches without position information
-        }
-
-        // Create a unique key for this range
-        const rangeKey = `${match.start}-${match.end}`;
-        if (processedRanges.has(rangeKey)) {
-            continue; // Skip if we've already processed this range
-        }
-        processedRanges.add(rangeKey);
-
-        const before = redactedContent.substring(0, match.start);
-        const after = redactedContent.substring(match.end);
-        redactedContent = before + 'REDACTED' + after;
-
-        redactions.push({
-            type: match.type,
-            start: match.start,
-            end: match.end,
-            original: content.substring(match.start, match.end),
-            policy: match.policy
-        });
-    }
-
-    return {
-        content: redactedContent,
-        redactions
-    };
-}
-
-/**
- * Scans text for secrets using GitGuardian API
- * @param {string} content - The text to scan
+ * Wrapper for GitGuardian scan that adds API key and logging
+ * @param {string} content - The content to scan and redact
  * @param {string} filename - Optional filename for the scan
- * @returns {Promise<Object>} The scan results
+ * @returns {Promise<Object>} Object containing redacted content and redaction info
  */
-async function scanWithGitGuardian(content, filename = "chat.txt") {
+async function scanAndRedactWithLogging(content, filename = "chat.txt") {
+    // Get API key from SSM Parameter Store
     const apiKey = await getGitGuardianApiKey();
     
-    return new Promise((resolve, reject) => {
-        const requestData = JSON.stringify({
-            filename,
-            document: content            // raw text to scan (≤ 1 MB)
-        });
-
-        const options = {
-            hostname: 'api.gitguardian.com',
-            path: '/v1/scan',
-            method: 'POST',
-            headers: {
-                'Authorization': `Token ${apiKey}`,
-                'Content-Type': 'application/json',
-                'Content-Length': Buffer.byteLength(requestData)
-            }
-        };
-
-        const req = https.request(options, (res) => {
-            let data = '';
-            res.on('data', (chunk) => data += chunk);
-            res.on('end', () => {
-                try {
-                    const scanResult = JSON.parse(data);
-                    resolve(scanResult);
-                } catch (error) {
-                    reject(new Error('Failed to parse GitGuardian response'));
-                }
+    // Scan and redact content, passing the API key as a parameter
+    const result = await scan(content, apiKey, { filename });
+    
+    // Log security events if there are redactions
+    if (result.redactions && result.redactions.length > 0) {
+        // Group redactions by policy for logging
+        const policyCounts = result.redactions.reduce((acc, redaction) => {
+            const policy = redaction.policy || 'unknown';
+            acc[policy] = (acc[policy] || 0) + 1;
+            return acc;
+        }, {});
+        
+        // Log each policy type separately
+        Object.entries(policyCounts).forEach(([policy, count]) => {
+            logSecurityEvent({
+                type: 'sensitive_data_detected',
+                policy: policy,
+                matches: count,
+                severity: 'medium'
             });
         });
-
-        req.on('error', (error) => reject(error));
-        req.write(requestData);
-        req.end();
-    });
-}
-
-/**
- * Converts OpenAI chat format to Anthropic format
- * @param {Array} messages - Array of message objects
- * @returns {string} - Formatted prompt for Anthropic
- */
-function convertToAnthropicFormat(messages) {
-    let prompt = '';
-    
-    for (const message of messages) {
-        switch (message.role) {
-            case 'system':
-                prompt += `\n\nHuman: ${message.content}\n\nAssistant: I understand. I will act according to those instructions.`;
-                break;
-            case 'user':
-                prompt += `\n\nHuman: ${message.content}`;
-                break;
-            case 'assistant':
-                prompt += `\n\nAssistant: ${message.content}`;
-                break;
-            default:
-                prompt += `\n\nHuman: ${message.content}`;
-        }
     }
-
-    // Add final assistant prompt marker for the response
-    prompt += '\n\nAssistant: ';
-    return prompt.trim();
+    
+    return result;
 }
+
 
 /**
  * Validates a message object
@@ -241,17 +197,6 @@ function validateMessage(message) {
     return null;
 }
 
-/**
- * Extracts content from messages for GitGuardian scanning
- * @param {Array} messages - Array of message objects
- * @returns {string} - Combined content for scanning
- */
-function extractContentForScanning(messages) {
-    return messages.map(message => {
-        // Extract just the content part, not the role or other metadata
-        return message.content;
-    }).join('\n\n');
-}
 
 /**
  * Processes a chat completion request
@@ -262,77 +207,53 @@ async function processChatCompletion(requestBody) {
     try {
         // Validate required fields
         if (!requestBody.model || !Array.isArray(requestBody.messages) || requestBody.messages.length === 0) {
-            return {
-                statusCode: 400,
-                headers: {
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify({
-                    error: {
-                        message: "Missing required fields: model and messages array",
-                        type: "invalid_request_error",
-                        param: null,
-                        code: null
-                    }
-                })
-            };
+            return createMissingFieldsErrorResponse();
         }
 
         // Validate model
         if (!SUPPORTED_MODELS[requestBody.model]) {
-            return {
-                statusCode: 400,
-                headers: {
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify({
-                    error: {
-                        message: `Model ${requestBody.model} is not supported. Currently supported models: ${Object.keys(SUPPORTED_MODELS).join(', ')}`,
-                        type: "invalid_request_error",
-                        param: "model",
-                        code: "model_not_supported"
-                    }
-                })
-            };
+            return createUnsupportedModelErrorResponse(requestBody.model, Object.keys(SUPPORTED_MODELS));
         }
 
         // Validate each message in the array
         for (const message of requestBody.messages) {
             const messageError = validateMessage(message);
             if (messageError) {
-                return {
-                    statusCode: 400,
-                    headers: {
-                        "Content-Type": "application/json"
-                    },
-                    body: JSON.stringify({ error: messageError })
-                };
+                return createMessageValidationErrorResponse(messageError);
             }
         }
 
-        // Scan all messages in parallel
-        const scanPromises = requestBody.messages.map(message => scanWithGitGuardian(message.content));
-        const scanResults = await Promise.all(scanPromises);
+        // Scan and redact all messages in parallel
+        const scanAndRedactPromises = requestBody.messages.map(message => 
+            scanAndRedactWithLogging(message.content, `message_${message.role}.txt`)
+        );
+        const redactionResults = await Promise.all(scanAndRedactPromises);
 
-        // Process message scan results
+        // Update messages with redacted content
         for (let i = 0; i < requestBody.messages.length; i++) {
-            const scanResult = scanResults[i];
-            const { content: redactedContent, redactions } = redactSensitiveContent(requestBody.messages[i].content, scanResult);
+            const { content: redactedContent, redactions } = redactionResults[i];
             
             if (redactions.length > 0) {
                 console.log('GitGuardian scan found sensitive content in message:', {
                     role: requestBody.messages[i].role,
-                    scanResult,
                     redactions
                 });
                 requestBody.messages[i].content = redactedContent;
             }
         }
 
-        // Convert messages to Anthropic format
-        const prompt = convertToAnthropicFormat(requestBody.messages);
-
         // Prepare Bedrock request
+        // Map 'system' role to 'user' with a prefix, as Bedrock doesn't support 'system' role directly
+        const mappedMessages = requestBody.messages.map(message => {
+            if (message.role === 'system') {
+                return {
+                    role: 'user',
+                    content: `[System instruction]: ${message.content}`
+                };
+            }
+            return message;
+        });
+        
         const bedrockRequest = {
             modelId: SUPPORTED_MODELS[requestBody.model].bedrockName,
             contentType: 'application/json',
@@ -341,12 +262,7 @@ async function processChatCompletion(requestBody) {
                 anthropic_version: "bedrock-2023-05-31",
                 max_tokens: requestBody.max_tokens || 2048,
                 temperature: requestBody.temperature || 0.7,
-                messages: [
-                    {
-                        role: "user",
-                        content: prompt
-                    }
-                ]
+                messages: mappedMessages
             })
         };
 
@@ -360,12 +276,10 @@ async function processChatCompletion(requestBody) {
 
         // Scan and redact LLM response
         try {
-            const scanResult = await scanWithGitGuardian(llmResponse);
-            const { content: redactedResponse, redactions } = redactSensitiveContent(llmResponse, scanResult);
+            const { content: redactedResponse, redactions } = await scanAndRedactWithLogging(llmResponse, "llm_response.txt");
             
             if (redactions.length > 0) {
                 console.log('GitGuardian scan found sensitive content in LLM response:', {
-                    scanResult,
                     redactions
                 });
                 llmResponse = redactedResponse;
@@ -412,20 +326,7 @@ async function processChatCompletion(requestBody) {
             error_message: error.message,
             severity: 'high'
         });
-        return {
-            statusCode: 500,
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-                error: {
-                    message: "An error occurred while calling the model API",
-                    type: "internal_server_error",
-                    param: null,
-                    code: error.name || null
-                }
-            })
-        };
+        return createServerErrorResponse(error.name);
     }
 }
 
@@ -440,19 +341,6 @@ exports.handler = async (event) => {
         // Process the request
         return await processChatCompletion(body);
     } catch (error) {
-        return {
-            statusCode: 500,
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-                error: {
-                    message: "An error occurred while processing your request",
-                    type: "internal_server_error",
-                    param: null,
-                    code: null
-                }
-            })
-        };
+        return createParsingErrorResponse();
     }
 }; 
