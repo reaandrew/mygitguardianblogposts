@@ -1,5 +1,6 @@
-curl -X POST "$SECURE_LLM_GATEWAY_URL/chat/completions" \
+curl -X POST "${SECURE_LLM_GATEWAY_URL}/chat/completions" \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer demo-token" \
   -d '{
     "model": "anthropic.claude-3-sonnet-20240229-v1:0",
     "messages": [

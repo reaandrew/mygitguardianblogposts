@@ -74,7 +74,6 @@ As organizations adopt LLMs internally, security and control become critical req
 - [ ] Create chunk reassembly logic
 - [ ] Add validation for chunked content
 - [ ] Implement error handling for chunking operations
-- [ ] Add performance monitoring for chunked operations
 
 ### Phase 4: MCP Server Implementation
 - [ ] Create serverless MCP Server in AWS Lambda
@@ -222,8 +221,9 @@ Creates a model response for the given chat conversation. The endpoint is design
 
 **Example Request:**
 ```bash
-curl -X POST https://rh4pnf2kmj2sq665vto2psrc540gkctv.lambda-url.eu-west-2.on.aws/chat/completions \
+curl -X POST https://example.execute-api.eu-west-2.amazonaws.com/chat/completions \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer your-token-here" \
   -d '{
     "model": "anthropic.claude-3-sonnet-20240229-v1:0",
     "messages": [
@@ -294,12 +294,14 @@ The gateway is built using:
 ## Security Considerations
 
 Current security features:
+- Custom Lambda authorizer for API access control
 - Input validation for all requests
+- Prompt and response scanning with GitGuardian
+- Automatic redaction of sensitive information
 - Proper error handling and sanitization
 - AWS IAM role-based access control
 - Model validation and restrictions
-
-[More security details coming soon]
+- CloudWatch security event monitoring
 
 ## Contributing
 
