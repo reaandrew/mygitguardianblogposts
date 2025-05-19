@@ -61,6 +61,7 @@ All infrastructure is authored and automated using Terraform, making it reproduc
 
 **A safe and scalable proxy pattern.**
 By building an OpenAI-compatible proxy that talks to Bedrock under the hood, we enable secure, governed access to AWS’s LLMs without needing clients to understand the underlying platform. It’s simple for developers, safe for organisations, and scalable from the start.
+
 ---
 
 ## Where It Can Go Next
