@@ -33,4 +33,15 @@ for (let i = 0; i < 2; i++) {
     console.log(`callTool:ping response: `, result);
 }
 
+// Call the fetch-file tool
+const fetchFileCall = {
+    name: "fetch-file",
+    arguments: {
+        file_key: "example-document.txt"
+    }
+};
+console.log('Calling fetch-file with:', JSON.stringify(fetchFileCall, null, 2));
+let fetchFileResult = await client.callTool(fetchFileCall);
+console.log(`callTool:fetch-file response: `, fetchFileResult);
+
 await client.close();
