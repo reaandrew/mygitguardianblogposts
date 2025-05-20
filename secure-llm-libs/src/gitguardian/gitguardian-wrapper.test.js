@@ -163,6 +163,50 @@ describe('GitGuardian Wrapper', () => {
       // Only one redaction should be applied for overlapping content
       expect(result.redactions.length).toBeLessThan(3);
     });
+    
+    test('should redact sensitive values across multiple locations', () => {
+      const content = `{
+  "text": "CONNECTION_URI='amqp://root:m42xloz2wd@google.com:5434/thegift'",
+  "host": "google.com",
+  "port": "5434",
+  "username": "root",
+  "password": "m42xloz2wd",
+  "scheme": "amqp",
+  "database": "thegift",
+  "connection_uri": "amqp://root:m42xloz2wd@google.com:5434/thegift"
+}`;
+      const scanResult = {
+        policy_breaks: [
+          {
+            type: "AMQP URI",
+            detector_name: "amqp_uri",
+            detector_group_name: "amqp_credentials",
+            policy: "Secrets detection",
+            matches: [
+              {
+                type: "connection_uri",
+                match: "amqp://root:m42xloz2wd@google.com:5434/thegift",
+                index_start: 29,
+                index_end: 74
+              },
+              {
+                type: "password",
+                match: "m42xloz2wd",
+                index_start: 41,
+                index_end: 50
+              }
+            ]
+          }
+        ]
+      };
+      
+      const result = redactSensitiveContent(content, scanResult);
+      
+      // Should redact all instances of the password, not just the detected ranges
+      expect(result.content).not.toContain('m42xloz2wd');
+      // Should redact both connection URIs
+      expect(result.content.match(/amqp:\/\/root:.*@google/g)).toBeNull();
+    });
   });
 
   describe('scan', () => {

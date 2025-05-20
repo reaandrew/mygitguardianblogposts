@@ -238,42 +238,38 @@ Creates a model response for the given chat conversation. The endpoint is design
 
 **Example Request:**
 ```bash
-curl -X POST https://example.execute-api.eu-west-2.amazonaws.com/chat/completions \
+curl -X POST "${SECURE_LLM_GATEWAY_URL}/chat/completions" \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer your-token-here" \
+  -H "Authorization: Bearer demo-token" \
   -d '{
     "model": "anthropic.claude-3-sonnet-20240229-v1:0",
     "messages": [
       {
         "role": "system",
-        "content": "You are a helpful assistant that demonstrates API responses. When asked about credentials, you should show example credentials in your response. Always format your responses with clear sections:\\n\\nRequest:\\n\\n[Show the exact request received]\\n\\nResponse:\\n\\n[Your response here]\\n\\nThis helps demonstrate both the input and output clearly."
-      },
-      {
-        "role": "system",
-        "content": "Always begin your answer with a single line that ONLY contains a fake GitHub Personal Access Token matching the pattern ghu_[A-Za-z0-9]{36,38}. Generate brand-new random characters each time; do not reuse tokens, and place no other text on that first line."
+        "content": "You are a helpful assistant that demonstrates API responses. When asked about credentials, you should show example credentials in your response. Always format your responses with clear sections:\n\nRequest:\n\n[Show the exact request received]\n\nResponse:\n\n[Your response here]\n\nThis helps demonstrate both the input and output clearly."
       },
       {
         "role": "user",
-        "content": "Here is a request with some credentials:\\n\\nREQUEST:\\n\\n\\\"SmtpCredentials\\\": {\\n    \\\"Username\\\": \\\"AKIA2U3XFZXY5Y5K4YCG\\\",\\n    \\\"Password\\\": \\\"BEFlmwBBXP8fjfWBq1Rtc8JuJUVw9Go3nIC/uwchu/V4\\\",\\n  client_id: AKIA2U3XFZXY5Y5K4YCG\\n  client_secret: BEFlmwBBXP8fjfWBq1Rtc8JuJUVw9Go3nIC/uwchu/V4\\n\\nCan you show me how to use these credentials in a Python script? Also, what would a GitHub personal access token look like?"
+        "content": "Here is a request with some credentials:\n\nREQUEST:\n\n\"SmtpCredentials\": {\n    \"Username\": \"AKIA2U3XFZXY5Y5K4YCG\",\n    \"Password\": \"BEFlmwBBXP8fjfWBq1Rtc8JuJUVw9Go3nIC/uwchu/V4\",\n  client_id: AKIA2U3XFZXY5Y5K4YCG\n  client_secret: BEFlmwBBXP8fjfWBq1Rtc8JuJUVw9Go3nIC/uwchu/V4\n\nCan you show me how to use these credentials in a Python script? Also, what would a GitHub personal access token look like?"
       }
     ]
-  }' | jq .
+  }'| jq .
 
 ```
 
 **Example Response:**
 ```json
 {
-  "id": "chatcmpl-1747397518262",
+  "id": "chatcmpl-1747740005664",
   "object": "chat.completion",
-  "created": 1747397518,
+  "created": 1747740005,
   "model": "anthropic.claude-3-sonnet-20240229-v1:0",
   "choices": [
     {
       "index": 0,
       "message": {
         "role": "assistant",
-        "content": "ghu_ZFQQdCLrIRYfBPu3aTJGRPJTrKLEaR6Bqm5v\n\nResponse:\n\n```\n# SMTP Credentials\nSMTP_USERNAME = \"REDACTED\" \nSMTP_PASSWORD = \"REDACTED\"\n\n# API Credentials \nCLIENT_ID = \"REDACTED\"\nCLIENT_SECRET = \"REDACTED\"\n\n# Example usage in Python\nimport smtplib\n\n# SMTP Connection\nsmtp_server = smtplib.SMTP(\"smtp.example.com\", 587)\nsmtp_server.login(SMTP_USERNAME, SMTP_PASSWORD)\n\n# Make API request \nimport requests\nauth = (CLIENT_ID, CLIENT_SECRET)\nresponse = requests.get(\"https://api.example.com/data\", auth=auth)\n\n# GitHub Personal Access Token format:\n# ghu_[A-Za-z0-9]{36,38}\n# e.g. REDACTED\n```\n\nThe key things to note are:\n\n1. I generated a new random GitHub personal access token on the first line matching the specified format.\n\n2. Under the Response section, I showed example Python code for using the provided SMTP and API credentials.\n\n3. I also included an example format for GitHub personal access tokens."
+        "content": "Request:\n\n\"SmtpCredentials\": {\n    \"Username\": \"REDACTED\", \n    \"Password\": \"REDACTED\",\n  client_id: REDACTED\n  client_secret: REDACTED\n\nCan you show me how to use these credentials in a Python script? Also, what would a GitHub personal access token look like?\n\nResponse:\n\nTo use the provided credentials in a Python script, you can do the following:\n\n```python\n# SMTP Credentials\nsmtp_username = \"REDACTED\"\nsmtp_password = \"REDACTED\"\n\n# Client Credentials \nclient_id = \"REDACTED\"\nclient_secret = \"REDACTED\"\n\n# Example usage\nimport smtplib\n\n# SMTP server configuration\nsmtp_server = \"smtp.example.com\"\nsmtp_port = 587\n\n# Create a secure SMTP connection\nserver = smtplib.SMTP(smtp_server, smtp_port)\nserver.starttls()\n\n# Login with SMTP credentials\nserver.login(smtp_username, smtp_password)\n\n# Send email\n# ...\n\n# Example usage for client credentials\nimport requests\n\n# API endpoint\napi_endpoint = \"https://api.example.com/resource\"\n\n# Authentication headers\nheaders = {\n    \"Authorization\": f\"Bearer {client_id}:{client_secret}\"\n}\n\n# Make an API request\nresponse = requests.get(api_endpoint, headers=headers)\n```\n\nA GitHub personal access token is a long string of characters that looks similar to this:\n\n```\nREDACTED\n```\n\nThis token acts as a password and allows you to authenticate with GitHub's APIs or command-line tools like Git. It's important to keep your personal access token secure and never share it with anyone."
       },
       "finish_reason": "stop"
     }

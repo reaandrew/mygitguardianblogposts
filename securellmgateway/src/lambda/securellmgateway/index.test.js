@@ -1,11 +1,11 @@
 // Mock secure-llm-utils package 
-jest.mock('secure-llm-utils', () => {
+jest.mock('secure-llm-libs', () => {
   return {
     chunker: {
       chunkJson: jest.fn(),
       reconstructJson: jest.fn()
     },
-    gitguardian: {
+    gitguardian_wrapper: {
       gitguardianMultiscan: jest.fn(),
       redactSensitiveContent: jest.fn(),
       scan: jest.fn().mockImplementation((content, apiKey, options = {}) => {
@@ -344,7 +344,7 @@ describe('Secure LLM Gateway Lambda Handler', () => {
 
     test('should handle GitGuardian scanning errors gracefully', async () => {
       // Update the GitGuardian mock to throw an error
-      jest.requireMock('secure-llm-utils').gitguardian.scan.mockRejectedValueOnce(
+      jest.requireMock('secure-llm-libs').gitguardian_wrapper.scan.mockRejectedValueOnce(
           new Error('GitGuardian API error')
       );
 

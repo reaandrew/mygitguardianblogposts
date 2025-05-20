@@ -1,0 +1,10 @@
+{
+  "text": "CONNECTION_URI='amqp://root:m42xloz2wd@google.com:5434/thegift'",
+  "host": "google.com",
+  "port": "5434",
+  "username": "root",
+  "password": "m42xloz2wd",
+  "scheme": "amqp",
+  "database": "thegift",
+  "connection_uri": "amqp://root:m42xloz2wd@google.com:5434/thegift"
+}

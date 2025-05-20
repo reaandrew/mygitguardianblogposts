@@ -98,23 +98,34 @@ function redactSensitiveContent(content, scanResult) {
   let redactedContent = content;
   const redactions = [];
   const processedRanges = new Set();
+  const sensitiveValues = new Set();
 
   // Sort matches by start position in reverse order to avoid position shifts
   const allMatches = scanResult.policy_breaks.flatMap(policyBreak => {
     // Handle different match structures
     if (policyBreak.matches) {
-      return policyBreak.matches.map(match => ({
-        ...match,
-        type: policyBreak.type,
-        start: match.index_start || match.start,
-        end: (match.index_end || match.end) + 1, // Add 1 to include the last character
-        policy: policyBreak.policy
-      }));
+      return policyBreak.matches.map(match => {
+        // Track the actual sensitive values for additional redaction
+        if (match.match && match.type && 
+            (match.type === 'password' || match.type === 'connection_uri' || 
+             match.type === 'username' || match.type === 'token' || 
+             match.type === 'api_key' || match.type === 'private_key')) {
+          sensitiveValues.add(match.match);
+        }
+        
+        return {
+          ...match,
+          type: policyBreak.type,
+          start: match.index_start || match.start,
+          end: (match.index_end || match.end) + 1, // Add 1 to include the last character
+          policy: policyBreak.policy
+        };
+      });
     }
     return [];
   }).sort((a, b) => b.start - a.start);
 
-  // Apply redactions
+  // Apply redactions based on position
   for (const match of allMatches) {
     if (match.start === undefined || match.end === undefined) {
       continue; // Skip matches without position information
@@ -140,10 +151,27 @@ function redactSensitiveContent(content, scanResult) {
     });
   }
 
+  // Additional pass to redact any remaining instances of sensitive values
+  // This ensures we catch values that might appear in multiple places
+  for (const sensitiveValue of sensitiveValues) {
+    if (sensitiveValue && sensitiveValue.length >= 6) { // Only redact meaningful values
+      // Use regex with word boundaries to avoid partial matches
+      const regex = new RegExp(`(?<=[^a-zA-Z0-9]|^)${escapeRegExp(sensitiveValue)}(?=[^a-zA-Z0-9]|$)`, 'g');
+      if (redactedContent.includes(sensitiveValue)) {
+        redactedContent = redactedContent.replace(regex, 'REDACTED');
+      }
+    }
+  }
+
   return {
     content: redactedContent,
     redactions
   };
+}
+
+// Helper to escape special regex characters
+function escapeRegExp(string) {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 
@@ -165,7 +193,9 @@ async function scan(content, apiKey, options = {}) {
   try {
     // Scan the content
     const results = await gitguardianMultiscan(content, apiKey, filename);
-    
+
+    console.log('GIT GUARDIAN SCAN RESULTS', JSON.stringify(results))
+
     // Process scan results
     let scanResult;
     if (results.length === 1) {
@@ -195,7 +225,7 @@ async function scan(content, apiKey, options = {}) {
       };
     }
   } catch (error) {
-    console.error('GitGuardian scan failed:', error.message);
+    console.log('GitGuardian scan failed:', error.message);
     // Return original content if scanning fails
     return {
       content,

@@ -1,8 +1,8 @@
 const { BedrockRuntimeClient, InvokeModelCommand } = require('@aws-sdk/client-bedrock-runtime');
 const { SSMClient, GetParameterCommand } = require('@aws-sdk/client-ssm');
 const { CloudWatchClient, PutMetricDataCommand } = require('@aws-sdk/client-cloudwatch');
-const { gitguardian, chunker } = require('secure-llm-utils');
-const { scan } = gitguardian;
+const { gitguardian_wrapper, chunker } = require('secure-llm-libs');
+const { scan } = gitguardian_wrapper;
 
 // Error response helpers
 const errorHeaders = { "Content-Type": "application/json" };
@@ -237,7 +237,7 @@ async function processChatCompletion(requestBody) {
             if (redactions.length > 0) {
                 console.log('GitGuardian scan found sensitive content in message:', {
                     role: requestBody.messages[i].role,
-                    redactions
+                    redactions: JSON.stringify(redactions)
                 });
                 requestBody.messages[i].content = redactedContent;
             }

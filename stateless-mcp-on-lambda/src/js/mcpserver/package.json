@@ -5,9 +5,11 @@
   "license": "Apache-2.0",
   "description": "A sample stateless MCP Server running on AWS Lambda",
   "dependencies": {
+    "@aws-sdk/client-ssm": "^3.529.1",
     "@modelcontextprotocol/sdk": "^1.11.0",
     "express": "^5.1.0",
     "log4js": "^6.9.1",
+    "secure-llm-libs": "file:../../../../secure-llm-libs",
     "zod": "^3.24.4"
   }
 }

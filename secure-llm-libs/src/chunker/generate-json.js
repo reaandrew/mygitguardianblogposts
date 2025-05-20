@@ -21,7 +21,7 @@ const { faker } = require('@faker-js/faker');
 
 const argv = minimist(process.argv.slice(2), {
   alias  : { s: 'size', c: 'count', r: 'secretRate', o: 'out' },
-  default: { out: 'output.json', secretRate: 0.03 },
+  default: { out: 'output.json', secretRate: 1 },
 });
 
 const TARGET_MB    = Number(argv.size);
