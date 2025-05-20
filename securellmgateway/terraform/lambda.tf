@@ -51,7 +51,7 @@ resource "aws_iam_role_policy" "lambda_ssm" {
           "ssm:GetParameter"
         ]
         Resource = [
-          "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter/ara/gitguardian/apikey/scan"
+          "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${var.gitguardian_ssm_key_path}"
         ]
       }
     ]
@@ -99,7 +99,8 @@ resource "aws_lambda_function" "hello_world" {
 
   environment {
     variables = {
-      ENVIRONMENT = var.environment
+      ENVIRONMENT = var.environment,
+      GITGUARDIAN_SSM_KEY_PATH = var.gitguardian_ssm_key_path
     }
   }
 }

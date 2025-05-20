@@ -55,6 +55,7 @@ jest.mock('secure-llm-libs', () => {
 
 // Set test environment
 process.env.NODE_ENV = 'test';
+process.env.GITGUARDIAN_SSM_KEY_PATH = '/test/gitguardian/apikey/scan';
 
 // Mock AWS SDK modules
 const { BedrockRuntimeClient, InvokeModelCommand } = require('@aws-sdk/client-bedrock-runtime');
@@ -77,7 +78,9 @@ describe('Secure LLM Gateway Lambda Handler', () => {
     cloudWatchMock.reset();
 
     // Mock SSM Parameter Store response for GitGuardian API key
-    ssmMock.on(GetParameterCommand).resolves({
+    ssmMock.on(GetParameterCommand, {
+      Name: process.env.GITGUARDIAN_SSM_KEY_PATH
+    }).resolves({
       Parameter: {
         Value: 'test-api-key'
       }

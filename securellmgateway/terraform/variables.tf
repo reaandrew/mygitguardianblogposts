@@ -14,4 +14,10 @@ variable "project_name" {
   description = "Project name for resource naming"
   type        = string
   default     = "secure-llm-gateway"
+}
+
+variable "gitguardian_ssm_key_path" {
+  description = "SSM Parameter Store path for GitGuardian API key"
+  type        = string
+  default     = "/ara/gitguardian/apikey/scan"
 } 

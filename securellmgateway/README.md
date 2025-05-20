@@ -118,10 +118,19 @@ As organizations adopt LLMs internally, security and control become critical req
    ```bash
    npm install
    ```
-3. Deploy to AWS:
+3. Set up the GitGuardian SSM key path (optional):
+   ```bash
+   # Use a custom SSM Parameter Store path for your GitGuardian API key
+   export TF_VAR_gitguardian_ssm_key_path="/your/custom/path/to/apikey"
+   ```
+   If not specified, the default path `/ara/gitguardian/apikey/scan` will be used.
+
+4. Deploy to AWS:
    ```bash
    npm run deploy
    ```
+
+   Note: You need to store your GitGuardian API key in AWS SSM Parameter Store at the path specified by the environment variable. If you don't have a GitGuardian API key, you'll need to create one or modify the code to use a different security scanning service.
 
 ### Testing
 The project includes a comprehensive test suite using Jest and aws-sdk-client-mock:
@@ -303,6 +312,24 @@ The gateway is built using:
 - Jest and aws-sdk-client-mock for testing
 
 [Detailed architecture diagram coming soon]
+
+## Configuration
+
+### Environment Variables
+
+The following environment variables can be configured for the Lambda function:
+
+- `ENVIRONMENT`: The deployment environment (e.g., dev, prod)
+- `GITGUARDIAN_SSM_KEY_PATH`: The SSM Parameter Store path where the GitGuardian API key is stored
+
+### Terraform Variables
+
+When deploying with Terraform, the following variables can be set:
+
+- `aws_region`: AWS region to deploy resources (default: "eu-west-2")
+- `environment`: Environment name (e.g., dev, prod) (default: "dev")
+- `project_name`: Project name for resource naming (default: "secure-llm-gateway")
+- `gitguardian_ssm_key_path`: SSM Parameter Store path for GitGuardian API key (default: "/ara/gitguardian/apikey/scan")
 
 ## Security Considerations
 

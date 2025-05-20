@@ -90,8 +90,11 @@ const SUPPORTED_MODELS = {
  * @returns {Promise<string>} The API key
  */
 async function getGitGuardianApiKey() {
+    // Use environment variable for SSM key path, with a default value for backward compatibility
+    const ssmKeyPath = process.env.GITGUARDIAN_SSM_KEY_PATH || '/ara/gitguardian/apikey/scan';
+    
     const command = new GetParameterCommand({
-        Name: '/ara/gitguardian/apikey/scan',
+        Name: ssmKeyPath,
         WithDecryption: true
     });
 
