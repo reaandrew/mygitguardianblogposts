@@ -33,7 +33,7 @@ With basic forwarding stable, I introduced GitGuardian’s Secrets Detection API
 
 ## Phase&nbsp;3 – Beating the 1 MB Limit with Smart Chunking
 
-Real-world prompts—and especially model outputs—could exceed GitGuardian’s 1 MB payload cap. Rather than truncate, I wrote a JSON-aware chunker that walks the incoming tree, slices arrays element-by-element or objects property-by-property, and labels each piece so it can be reassembled after scanning. At this stage, I also introduced redaction: any secrets detected by GitGuardian were replaced with the token **REDACTED** before being passed along. The gateway switched to using GitGuardian’s *multiscan* endpoint ([https://api.gitguardian.com/docs#tag/Scan-Methods/operation/multiple_scan](https://api.gitguardian.com/docs#tag/Scan-Methods/operation/multiple_scan)), batching dozens of chunks in a single call while keeping latency low.
+Real-world prompts—and especially model outputs—could exceed GitGuardian’s 1 MB payload cap. Rather than truncate, I wrote a JSON-aware chunker that walks the incoming tree, slices arrays element-by-element or objects property-by-property, and labels each piece so it can be reassembled after scanning. At this stage, I also introduced redaction: any secrets detected by GitGuardian were replaced with the token **REDACTED** before being passed along. The gateway switched to using GitGuardian’s *multiscan* endpoint ([https://api.gitguardian.com/docs#tag/Scan-Methods/operation/multiple_scan](https://api.gitguardian.com/docs#tag/Scan-Methods/operation/multiple_scan)), batching multiple chunks in a single call while keeping latency low.
 
 ![secure-llm-gateway-Phase-3-flow.drawio.png](images/secure-llm-gateway-Phase-3-flow.drawio.png)
 
@@ -142,7 +142,7 @@ Notice how the GitGuardian integration has automatically identified and redacted
 GitGuardian is embedded directly into the request and response flow, helping catch secrets before they ever leave the user or hit the model. Input validation runs from the first line of code, secrets detection wraps both sides of the LLM interaction, and CloudWatch logs are structured for security-first auditing.
 
 **Terraform-defined, serverless-deployed.**
-All infrastructure is authored and automated using Terraform, making it reproducible, version-controlled, and easy to evolve. We lean on the Serverless model—API Gateway, Lambda, and Bedrock—to stay lean, low-cost, and horizontally scalable without managing infrastructure.
+All infrastructure is authored and automated using Terraform, making it reproducible, version-controlled, and easy to evolve. We have implemented  Serverless model—API Gateway, Lambda, and Bedrock—to stay lean, low-cost, and horizontally scalable without managing infrastructure.
 
 **A safe and scalable proxy pattern.**
 By building an OpenAI-compatible proxy that talks to Bedrock under the hood, we enable secure, governed access to AWS’s LLMs without needing clients to understand the underlying platform. It’s simple for developers, safe for organisations, and scalable from the start.
@@ -151,7 +151,7 @@ By building an OpenAI-compatible proxy that talks to Bedrock under the hood, we 
 
 ## Where It Can Go Next
 
-I’d like to explore richer CloudWatch dashboards that break down GitGuardian detections by type and frequency. This could help surface usage patterns and reduce the risk of sensitive data making its way into prompts or completions. I’m also considering a lightweight caching layer for frequently requested documents to improve performance. The Lambda Layer will remain purely as a convenient way to share common libraries—chunking logic, GitGuardian wrappers, and utility functions—across multiple functions without duplication.
+I’d like to explore richer CloudWatch dashboards that break down GitGuardian detections by type and frequency. This could help surface usage patterns and reduce the risk of sensitive data making its way into prompts or completions. The creation of a Lambda Layer would help as a convenient way to share common libraries—chunking logic, GitGuardian wrappers, and utility functions—across multiple functions without duplication.
 
 ---
 
