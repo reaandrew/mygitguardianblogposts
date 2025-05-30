@@ -26,7 +26,7 @@ With basic forwarding stable, I introduced GitGuardian’s Secrets Detection API
 
 ![secure-llm-gateway-Phase-2-flow.drawio.png](images/secure-llm-gateway-Phase-2-flow.drawio.png)
 
-[View this phase on GitHub](https://github.com/secronyx/secure-llm-gateway/tree/phase-2)
+[View this phase on GitHub](https://github.com/reaandrew/mygitguardianblogposts/tree/phase-2)
 
 
 ---
